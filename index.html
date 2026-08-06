@@ -1391,17 +1391,28 @@
   // so it stays part of the same simulation rather than sitting on top of it.
   var fish = [];
   var MAX_FISH = 14;
+  var FISH_WALL_MARGIN = 55;
+  var FISH_TURN_RATE = 3.2; // rad/sec base cap -- scaled up near a wall, see updateFish
+  var FISH_WAKE_INTERVAL = 0.1; // seconds between wake impulses -- doesn't need to be every tick to read as continuous
 
   function spawnFish(x, y) {
     if (fish.length >= MAX_FISH) fish.shift();
+    // if dropped close to an edge, start already facing open water instead
+    // of leaving it to chance + a turn-rate cap to save it in time
+    var angle = Math.random() * Math.PI * 2;
+    var bx = 0, by = 0;
+    if (x < FISH_WALL_MARGIN) bx = 1; else if (x > W - FISH_WALL_MARGIN) bx = -1;
+    if (y < FISH_WALL_MARGIN) by = 1; else if (y > H - FISH_WALL_MARGIN) by = -1;
+    if (bx !== 0 || by !== 0) angle = Math.atan2(by, bx) + (Math.random() - 0.5) * 0.8;
     fish.push({
       x: x, y: y,
-      angle: Math.random() * Math.PI * 2,
+      angle: angle,
+      wanderAngle: null,
       speed: 16 + Math.random() * 16,
       wobble: Math.random() * Math.PI * 2,
       turnT: 0,
       turnEvery: 1 + Math.random() * 2,
-      targetTurn: 0,
+      wakeT: Math.random() * 0.1,
       size: 11 + Math.random() * 7,
       born: simClockNow
     });
@@ -1414,13 +1425,35 @@
       var f = fish[i];
       f.wobble += dt * 6;
       f.turnT += dt;
-      if (f.turnT > f.turnEvery) {
+      if (f.turnT > f.turnEvery || f.wanderAngle === null) {
         f.turnT = 0;
         f.turnEvery = 1 + Math.random() * 2.4;
-        f.targetTurn = (Math.random() - 0.5) * 1.6;
+        f.wanderAngle = f.angle + (Math.random() - 0.5) * 2.2;
       }
-      f.angle += f.targetTurn * dt * 0.6;
 
+      // steer away from the tank walls well before reaching them, instead
+      // of bouncing off -- the closer a fish gets, the harder it pulls
+      // toward open water, so the turn away is a smooth curve, not a snap.
+      var avx = 0, avy = 0;
+      if (f.x < FISH_WALL_MARGIN) avx += (FISH_WALL_MARGIN - f.x) / FISH_WALL_MARGIN;
+      else if (f.x > W - FISH_WALL_MARGIN) avx -= (f.x - (W - FISH_WALL_MARGIN)) / FISH_WALL_MARGIN;
+      if (f.y < FISH_WALL_MARGIN) avy += (FISH_WALL_MARGIN - f.y) / FISH_WALL_MARGIN;
+      else if (f.y > H - FISH_WALL_MARGIN) avy -= (f.y - (H - FISH_WALL_MARGIN)) / FISH_WALL_MARGIN;
+
+      var avMag = Math.hypot(avx, avy); // 0 in open water, up to ~1.4 jammed into a corner
+      var desiredX = Math.cos(f.wanderAngle) + avx * 2.6;
+      var desiredY = Math.sin(f.wanderAngle) + avy * 2.6;
+      var desiredAngle = Math.atan2(desiredY, desiredX);
+      var diff = desiredAngle - f.angle;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      // turn harder the more urgent the avoidance is, so a fish spawned or
+      // pushed right up against a corner can still turn out in time
+      var maxStep = FISH_TURN_RATE * (1 + avMag * 4) * dt;
+      if (diff > maxStep) diff = maxStep; else if (diff < -maxStep) diff = -maxStep;
+      f.angle += diff;
+
+      // carried a little by the same current the ink follows
       var gx = 1 + (f.x / W) * Nx, gy = 1 + (f.y / H) * Ny;
       if (gx >= 1 && gx <= Nx && gy >= 1 && gy <= Ny) {
         var svx = sampleField(vx, gx, gy), svy = sampleField(vy, gx, gy);
@@ -1428,14 +1461,28 @@
         f.y += svy * dt * 3.5;
       }
 
-      f.x += Math.cos(f.angle) * f.speed * dt;
-      f.y += Math.sin(f.angle) * f.speed * dt;
+      // also eases off its swim speed while turning out of a corner, buying
+      // the turn more time to complete before it would reach the wall
+      var speedScale = 1 - Math.min(0.6, avMag * 0.5);
+      f.x += Math.cos(f.angle) * f.speed * speedScale * dt;
+      f.y += Math.sin(f.angle) * f.speed * speedScale * dt;
+      // last-resort clamp only -- the steering above should keep fish off
+      // the walls on its own; this just guards against edge cases like a
+      // mid-swim window resize suddenly shrinking the tank.
+      if (f.x < 2) f.x = 2; else if (f.x > W - 2) f.x = W - 2;
+      if (f.y < 2) f.y = 2; else if (f.y > H - 2) f.y = H - 2;
 
-      var m = f.size;
-      if (f.x < m) { f.x = m; f.angle = Math.PI - f.angle; }
-      else if (f.x > W - m) { f.x = W - m; f.angle = Math.PI - f.angle; }
-      if (f.y < m) { f.y = m; f.angle = -f.angle; }
-      else if (f.y > H - m) { f.y = H - m; f.angle = -f.angle; }
+      // a swimming fish should actually push water, not just be carried by
+      // it -- a small thrust wake behind it, added every few ticks rather
+      // than all 60/sec since the fluid smooths it out either way.
+      f.wakeT += dt;
+      if (f.wakeT >= FISH_WAKE_INTERVAL) {
+        var n = Math.round(f.wakeT / FISH_WAKE_INTERVAL);
+        f.wakeT -= n * FISH_WAKE_INTERVAL;
+        var thrust = f.speed * 0.075 * n;
+        var wx = f.x - Math.cos(f.angle) * f.size * 0.9, wy = f.y - Math.sin(f.angle) * f.size * 0.9;
+        addVelocity(wx, wy, Math.cos(f.angle) * thrust, Math.sin(f.angle) * thrust, 1.8);
+      }
     }
   }
 
