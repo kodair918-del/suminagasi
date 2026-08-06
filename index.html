@@ -270,6 +270,10 @@
   }
   #fishLayer {
     pointer-events: none;
+    /* filled with plain white and inverted per-pixel against whatever is
+       beneath -- a fish straddling both ink and bare water still comes out
+       correctly split between black and white, no manual color sampling. */
+    mix-blend-mode: difference;
   }
   .lightning-flash {
     position: fixed;
@@ -1540,14 +1544,20 @@
   function renderFish() {
     fishLayerCtx.clearRect(0, 0, W, H);
     if (fish.length === 0) return;
-    var col = isDark ? "225,227,222" : "35,35,32";
+    // solid opaque white + mix-blend-mode:difference on the layer (see CSS)
+    // -- the browser inverts each covered pixel against whatever's beneath
+    // it individually, so a fish crossing both ink and bare water comes out
+    // correctly split, not one flat sampled color. Partial alpha would just
+    // mix toward a muddy grey instead of a clean invert, so the pop-in on
+    // spawn is done via scale instead of fading opacity.
+    fishLayerCtx.fillStyle = "#fff";
     for (var i = 0; i < fish.length; i++) {
       var f = fish[i];
-      var fadeIn = Math.min(1, (simClockNow - f.born) / 600);
+      var popIn = Math.min(1, (simClockNow - f.born) / 350);
       fishLayerCtx.save();
       fishLayerCtx.translate(f.x, f.y);
       fishLayerCtx.rotate(f.angle + Math.sin(f.wobble) * 0.12);
-      fishLayerCtx.fillStyle = "rgba(" + col + "," + (0.55 * fadeIn) + ")";
+      fishLayerCtx.scale(popIn, popIn);
       drawFishShape(fishLayerCtx, f.size);
       fishLayerCtx.fill();
       fishLayerCtx.restore();
