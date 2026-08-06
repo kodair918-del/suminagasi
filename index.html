@@ -978,6 +978,8 @@
   var WARP_STRENGTH = 1.6;
   var WARP_FLOW_THRESHOLD = 9;
 
+  var warpOutImg = null, warpOutBW = 0, warpOutBH = 0;
+
   function warpInk() {
     if (lastTotalFlow < WARP_FLOW_THRESHOLD) return;
     var bw = Math.max(48, Math.round(W * WARP_SCALE));
@@ -987,7 +989,14 @@
     warpSrcCtx.drawImage(canvas, 0, 0, bw, bh);
     var srcData = warpSrcCtx.getImageData(0, 0, bw, bh);
     var srcPix = srcData.data;
-    var outImg = warpOutCtx.createImageData(bw, bh);
+    // the output buffer is reused across frames instead of allocated fresh
+    // each time -- every pixel gets overwritten below anyway, and this is
+    // the one call in the hot path that ran every frame during stirring.
+    if (bw !== warpOutBW || bh !== warpOutBH) {
+      warpOutImg = warpOutCtx.createImageData(bw, bh);
+      warpOutBW = bw; warpOutBH = bh;
+    }
+    var outImg = warpOutImg;
     var outPix = outImg.data;
     var toGx = Nx / bw, toGy = Ny / bh;
     var dxScale = WARP_STRENGTH * (bw / W), dyScale = WARP_STRENGTH * (bh / H);
@@ -1390,7 +1399,7 @@
   // its own, nudged along by whatever the current fluid velocity is doing,
   // so it stays part of the same simulation rather than sitting on top of it.
   var fish = [];
-  var MAX_FISH = 14;
+  var MAX_FISH = 28;
   var FISH_WALL_MARGIN = 55;
   var FISH_TURN_RATE = 3.2; // rad/sec base cap -- scaled up near a wall, see updateFish
   var FISH_WAKE_INTERVAL = 0.1; // seconds between wake impulses -- doesn't need to be every tick to read as continuous
