@@ -526,6 +526,10 @@
             <option value="fast">すぐ消える</option>
           </select>
         </label>
+        <label class="settings-row settings-checkbox">
+          <input type="checkbox" id="rippleToggle">
+          <span>波紋を表示する(負荷が上がります)</span>
+        </label>
         <label class="settings-row">
           <span>波紋の強さ</span>
           <input type="range" id="waveStrengthRange" min="0.3" max="2" step="0.1" value="1">
@@ -818,8 +822,12 @@
   // with a dead-flat surface -- now it only runs while something is
   // actually disturbing it, and idles out once the ripples decay below an
   // imperceptible threshold (re-armed instantly by the next addRipple).
-  var waveActive = true;
-  var waveRenderedIdle = false;
+  // Ripple display itself is opt-in (settings) since it's the single
+  // heaviest thing this piece computes -- addRipple no-ops entirely while
+  // it's off, so there's nothing running in the background for it either.
+  var rippleVisible = false;
+  var waveActive = false;
+  var waveRenderedIdle = true;
   var WAVE_IDLE_THRESHOLD = 0.015;
 
   function waveSetBnd(x) {
@@ -846,6 +854,7 @@
   }
 
   function addRipple(px, py, amount, radius) {
+    if (!rippleVisible) return;
     waveActive = true;
     var gx = 1 + (px / W) * Nx, gy = 1 + (py / H) * Ny;
     var r = radius, r2 = r * r;
@@ -941,6 +950,7 @@
     warpInk();
     updateWeather();
     updateFish();
+    updateHoldStir();
     if (INK_FADE_ENABLED) {
       ctx.globalCompositeOperation = "source-over";
       ctx.fillStyle = "rgb(" + water.r + "," + water.g + "," + water.b + ")";
@@ -1556,6 +1566,7 @@
 
   var lastX = null, lastY = null;
   var downX = 0, downY = 0, downT = 0, isDown = false;
+  var holdX = 0, holdY = 0;
   var lastInteraction = performance.now();
   var running = false;
 
@@ -1564,9 +1575,28 @@
     if (!running) { running = true; requestAnimationFrame(loop); }
   }
 
+  // holding the click down (without dragging) stirs a small current right
+  // under the cursor, instead of doing nothing until release -- release
+  // still only drops ink for a quick tap (see the dt/dist check below), so
+  // this never fights with that gesture.
+  var HOLD_STIR_STRENGTH = 3.2;
+  var HOLD_STIR_RADIUS = 3.5;
+  var holdStirAngle = 0;
+
+  function updateHoldStir() {
+    if (!isDown) return;
+    holdStirAngle += (TICK_MS / 1000) * 5;
+    var fx = Math.cos(holdStirAngle) * HOLD_STIR_STRENGTH;
+    var fy = Math.sin(holdStirAngle) * HOLD_STIR_STRENGTH;
+    addVelocity(holdX, holdY, fx, fy, HOLD_STIR_RADIUS);
+    addRipple(holdX, holdY, 0.35, 1.6);
+    ensureRunning();
+  }
+
   function handleMove(clientX, clientY) {
     var r = canvas.getBoundingClientRect();
     var x = clientX - r.left, y = clientY - r.top;
+    holdX = x; holdY = y;
     if (lastX !== null) {
       var dx = clientX - lastX, dy = clientY - lastY;
       var speed = Math.hypot(dx, dy);
@@ -1625,6 +1655,8 @@
     if (e.button !== 0) return;
     ensureAudioStarted();
     isDown = true; downX = e.clientX; downY = e.clientY; downT = performance.now();
+    var r = canvas.getBoundingClientRect();
+    holdX = e.clientX - r.left; holdY = e.clientY - r.top;
     canvas.setPointerCapture(e.pointerId);
   });
   canvas.addEventListener("pointerup", function (e) {
@@ -1662,9 +1694,20 @@
 
   // ---------- settings (live in the info screen) ----------
   var fadeSelect = document.getElementById("fadeSelect");
+  var rippleToggle = document.getElementById("rippleToggle");
   var waveStrengthRange = document.getElementById("waveStrengthRange");
   var soundToggle = document.getElementById("soundToggle");
   var volumeRange = document.getElementById("volumeRange");
+
+  rippleToggle.checked = rippleVisible;
+  rippleToggle.addEventListener("change", function () {
+    rippleVisible = rippleToggle.checked;
+    if (!rippleVisible) {
+      waveActive = false;
+      waveRenderedIdle = true;
+      waveLayerCtx.clearRect(0, 0, W, H);
+    }
+  });
 
   var FADE_PRESETS = {
     none: { enabled: false, alpha: INK_FADE_ALPHA },
