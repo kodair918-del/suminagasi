@@ -268,7 +268,7 @@
     mix-blend-mode: overlay;
     opacity: 0.8;
   }
-  #weatherLayer {
+  #fishLayer {
     pointer-events: none;
   }
   .lightning-flash {
@@ -465,7 +465,7 @@
 <div class="stage">
   <canvas id="c"></canvas>
   <canvas id="waveLayer"></canvas>
-  <canvas id="weatherLayer"></canvas>
+  <canvas id="fishLayer"></canvas>
 </div>
 <div class="lightning-flash" id="lightningFlash"></div>
 
@@ -550,10 +550,6 @@
         <label class="settings-row">
           <span>雨の強さ</span>
           <input type="range" id="rainRange" min="0" max="1" step="0.05" value="0.5">
-        </label>
-        <label class="settings-row settings-checkbox">
-          <input type="checkbox" id="snowToggle">
-          <span>雪を降らせる</span>
         </label>
         <label class="settings-row settings-checkbox">
           <input type="checkbox" id="thunderToggle">
@@ -684,8 +680,8 @@
   var ctx = canvas.getContext("2d");
   var waveLayerEl = document.getElementById("waveLayer");
   var waveLayerCtx = waveLayerEl.getContext("2d");
-  var weatherLayerEl = document.getElementById("weatherLayer");
-  var weatherLayerCtx = weatherLayerEl.getContext("2d");
+  var fishLayerEl = document.getElementById("fishLayer");
+  var fishLayerCtx = fishLayerEl.getContext("2d");
   var dpr = Math.min(window.devicePixelRatio || 1, 2);
   var W = window.innerWidth, H = window.innerHeight;
 
@@ -931,6 +927,7 @@
     simStep();
     warpInk();
     updateWeather();
+    updateFish();
     if (INK_FADE_ENABLED) {
       ctx.globalCompositeOperation = "source-over";
       ctx.fillStyle = "rgb(" + water.r + "," + water.g + "," + water.b + ")";
@@ -1076,7 +1073,7 @@
     waveLayerCtx.imageSmoothingQuality = "high";
     waveLayerCtx.drawImage(waveOff, 0, 0, Nx, Ny, 0, 0, W, H);
 
-    renderWeatherLayer();
+    renderFish();
   }
 
   // ---------- water sound (recorded samples) ----------
@@ -1223,37 +1220,34 @@
   }
 
   // ---------- weather ----------
-  // if it's actually raining/snowing where the visitor is, the water surface
-  // reacts to it (Open-Meteo, no API key needed). The Konami code on the
-  // info screen unlocks a manual override panel that works regardless of
-  // real conditions.
-  var weather = { rainOn: false, rainIntensity: 0.5, snowOn: false, thunderOn: false, auto: true };
-  var rainDrops = [];
-  var snowFlakes = [];
-  var RAIN_DROP_LIFE = 550;
-  var SNOW_FLAKE_LIFE = 2200;
+  // if it's actually raining where the visitor is, the water surface reacts
+  // to it (Open-Meteo, no API key needed) -- snow counts as rain here, it
+  // isn't given its own visual. The Konami code on the info screen unlocks
+  // a manual override panel that works regardless of real conditions.
+  var weather = { rainOn: false, rainIntensity: 0.5, thunderOn: false, auto: true };
   var THUNDER_CHANCE_PER_TICK = 0.0006;
   var rainTimerMs = 0;
-  var snowTimerMs = 0;
+  var rainNextInterval = 300;
   var lightningFlashEl = document.getElementById("lightningFlash");
+
+  function scheduleNextRain() {
+    // deliberately irregular -- a metronomic drip reads as fake, real rain
+    // clusters and gaps.
+    var base = 230 - weather.rainIntensity * 180;
+    rainNextInterval = base * (0.35 + Math.random() * 1.5);
+  }
 
   function spawnRainDrop() {
     var x = Math.random() * W, y = Math.random() * H;
-    rainDrops.push({ x: x, y: y, born: simClockNow });
-    addRipple(x, y, 1.1 + weather.rainIntensity * 2.2, 3 + weather.rainIntensity * 2.5);
+    addRipple(x, y, 0.45 + weather.rainIntensity * 0.85, 1.3 + weather.rainIntensity * 1.1);
     playRainSound();
-  }
-
-  function spawnSnowFlake() {
-    var x = Math.random() * W, y = Math.random() * H;
-    snowFlakes.push({ x: x, y: y, born: simClockNow, driftX: (Math.random() - 0.5) * 18 });
   }
 
   function triggerLightning() {
     var x = W * (0.2 + Math.random() * 0.6), y = H * (0.2 + Math.random() * 0.6);
-    addRipple(x, y, 9, 16);
-    addRipple(x, y, 5, 9);
-    addVelocity(x, y, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6, 10);
+    addRipple(x, y, 20, 30);
+    addRipple(x, y, 11, 17);
+    addVelocity(x, y, (Math.random() - 0.5) * 12, (Math.random() - 0.5) * 12, 18);
     if (lightningFlashEl) {
       lightningFlashEl.classList.remove("strike");
       void lightningFlashEl.offsetWidth;
@@ -1266,51 +1260,9 @@
   function updateWeather() {
     if (weather.rainOn) {
       rainTimerMs += TICK_MS;
-      var interval = 850 - weather.rainIntensity * 700;
-      if (rainTimerMs > interval) { rainTimerMs = 0; spawnRainDrop(); }
-    }
-    if (weather.snowOn) {
-      snowTimerMs += TICK_MS;
-      if (snowTimerMs > 260) { snowTimerMs = 0; spawnSnowFlake(); }
+      if (rainTimerMs > rainNextInterval) { rainTimerMs = 0; scheduleNextRain(); spawnRainDrop(); }
     }
     if (weather.thunderOn && Math.random() < THUNDER_CHANCE_PER_TICK) triggerLightning();
-
-    var now = simClockNow, w = 0, i;
-    for (i = 0; i < rainDrops.length; i++) { if (now - rainDrops[i].born < RAIN_DROP_LIFE) rainDrops[w++] = rainDrops[i]; }
-    rainDrops.length = w;
-    w = 0;
-    for (i = 0; i < snowFlakes.length; i++) { if (now - snowFlakes[i].born < SNOW_FLAKE_LIFE) snowFlakes[w++] = snowFlakes[i]; }
-    snowFlakes.length = w;
-  }
-
-  function renderWeatherLayer() {
-    weatherLayerCtx.clearRect(0, 0, W, H);
-    if (rainDrops.length === 0 && snowFlakes.length === 0) return;
-    var col = isDark ? "255,255,255" : "90,100,110";
-    var i;
-    for (i = 0; i < rainDrops.length; i++) {
-      var d = rainDrops[i];
-      var t = (simClockNow - d.born) / RAIN_DROP_LIFE;
-      var r = 1.5 + t * 6;
-      var a = Math.max(0, 1 - t) * 0.55;
-      weatherLayerCtx.beginPath();
-      weatherLayerCtx.arc(d.x, d.y, r, 0, Math.PI * 2);
-      weatherLayerCtx.strokeStyle = "rgba(" + col + "," + a + ")";
-      weatherLayerCtx.lineWidth = 1;
-      weatherLayerCtx.stroke();
-    }
-    var snowCol = isDark ? "235,238,242" : "255,255,255";
-    for (i = 0; i < snowFlakes.length; i++) {
-      var f = snowFlakes[i];
-      var ft = (simClockNow - f.born) / SNOW_FLAKE_LIFE;
-      var fa = Math.sin(Math.min(1, ft) * Math.PI) * 0.85;
-      var fr = 1.2 + Math.sin(ft * Math.PI) * 1.6;
-      var fx = f.x + f.driftX * ft;
-      weatherLayerCtx.beginPath();
-      weatherLayerCtx.arc(fx, f.y, fr, 0, Math.PI * 2);
-      weatherLayerCtx.fillStyle = "rgba(" + snowCol + "," + fa + ")";
-      weatherLayerCtx.fill();
-    }
   }
 
   function playRainSound() {
@@ -1368,9 +1320,8 @@
     var isRain = (code >= 51 && code <= 67) || (code >= 80 && code <= 82) || rainMm > 0;
     var isSnow = (code >= 71 && code <= 77) || (code >= 85 && code <= 86) || snowCm > 0;
     var isThunder = code >= 95 && code <= 99;
-    weather.rainOn = isRain;
-    weather.rainIntensity = Math.max(0.15, Math.min(1, rainMm / 4));
-    weather.snowOn = isSnow;
+    weather.rainOn = isRain || isSnow;
+    weather.rainIntensity = Math.max(0.15, Math.min(1, (rainMm + snowCm) / 4));
     weather.thunderOn = isThunder;
     syncWeatherUI();
   }
@@ -1394,7 +1345,6 @@
   var weatherSection = document.getElementById("weatherSection");
   var rainToggle = document.getElementById("rainToggle");
   var rainRange = document.getElementById("rainRange");
-  var snowToggle = document.getElementById("snowToggle");
   var thunderToggle = document.getElementById("thunderToggle");
   var btnStrikeNow = document.getElementById("btnStrikeNow");
   var weatherAutoNote = document.getElementById("weatherAutoNote");
@@ -1402,7 +1352,6 @@
   function syncWeatherUI() {
     if (rainToggle) rainToggle.checked = weather.rainOn;
     if (rainRange) rainRange.value = weather.rainIntensity;
-    if (snowToggle) snowToggle.checked = weather.snowOn;
     if (thunderToggle) thunderToggle.checked = weather.thunderOn;
     if (weatherAutoNote) weatherAutoNote.textContent = weather.auto ? "(現在地の実際の天気を反映中)" : "(手動設定中)";
   }
@@ -1414,7 +1363,6 @@
 
   if (rainToggle) rainToggle.addEventListener("change", function () { weather.rainOn = rainToggle.checked; manualWeatherChange(); });
   if (rainRange) rainRange.addEventListener("input", function () { weather.rainIntensity = parseFloat(rainRange.value); manualWeatherChange(); });
-  if (snowToggle) snowToggle.addEventListener("change", function () { weather.snowOn = snowToggle.checked; manualWeatherChange(); });
   if (thunderToggle) thunderToggle.addEventListener("change", function () { weather.thunderOn = thunderToggle.checked; manualWeatherChange(); });
   if (btnStrikeNow) btnStrikeNow.addEventListener("click", function () { ensureAudioStarted(); triggerLightning(); });
 
@@ -1435,6 +1383,99 @@
     } else {
       konamiPos = (e.key === KONAMI_SEQ[0]) ? 1 : 0;
     }
+  });
+
+  // ---------- fish ----------
+  // right-click drops a small ink-brush fish into the water; it swims on
+  // its own, nudged along by whatever the current fluid velocity is doing,
+  // so it stays part of the same simulation rather than sitting on top of it.
+  var fish = [];
+  var MAX_FISH = 14;
+
+  function spawnFish(x, y) {
+    if (fish.length >= MAX_FISH) fish.shift();
+    fish.push({
+      x: x, y: y,
+      angle: Math.random() * Math.PI * 2,
+      speed: 16 + Math.random() * 16,
+      wobble: Math.random() * Math.PI * 2,
+      turnT: 0,
+      turnEvery: 1 + Math.random() * 2,
+      targetTurn: 0,
+      size: 11 + Math.random() * 7,
+      born: simClockNow
+    });
+  }
+
+  function updateFish() {
+    if (fish.length === 0) return;
+    var dt = TICK_MS / 1000;
+    for (var i = 0; i < fish.length; i++) {
+      var f = fish[i];
+      f.wobble += dt * 6;
+      f.turnT += dt;
+      if (f.turnT > f.turnEvery) {
+        f.turnT = 0;
+        f.turnEvery = 1 + Math.random() * 2.4;
+        f.targetTurn = (Math.random() - 0.5) * 1.6;
+      }
+      f.angle += f.targetTurn * dt * 0.6;
+
+      var gx = 1 + (f.x / W) * Nx, gy = 1 + (f.y / H) * Ny;
+      if (gx >= 1 && gx <= Nx && gy >= 1 && gy <= Ny) {
+        var svx = sampleField(vx, gx, gy), svy = sampleField(vy, gx, gy);
+        f.x += svx * dt * 3.5;
+        f.y += svy * dt * 3.5;
+      }
+
+      f.x += Math.cos(f.angle) * f.speed * dt;
+      f.y += Math.sin(f.angle) * f.speed * dt;
+
+      var m = f.size;
+      if (f.x < m) { f.x = m; f.angle = Math.PI - f.angle; }
+      else if (f.x > W - m) { f.x = W - m; f.angle = Math.PI - f.angle; }
+      if (f.y < m) { f.y = m; f.angle = -f.angle; }
+      else if (f.y > H - m) { f.y = H - m; f.angle = -f.angle; }
+    }
+  }
+
+  function drawFishShape(c, size) {
+    c.beginPath();
+    c.moveTo(size * 0.9, 0);
+    c.quadraticCurveTo(size * 0.5, -size * 0.32, -size * 0.15, -size * 0.22);
+    c.quadraticCurveTo(-size * 0.55, -size * 0.12, -size * 0.75, 0);
+    c.quadraticCurveTo(-size * 0.55, size * 0.12, -size * 0.15, size * 0.22);
+    c.quadraticCurveTo(size * 0.5, size * 0.32, size * 0.9, 0);
+    c.closePath();
+    c.moveTo(-size * 0.7, 0);
+    c.lineTo(-size * 1.1, -size * 0.3);
+    c.lineTo(-size * 1.1, size * 0.3);
+    c.closePath();
+  }
+
+  function renderFish() {
+    fishLayerCtx.clearRect(0, 0, W, H);
+    if (fish.length === 0) return;
+    var col = isDark ? "225,227,222" : "35,35,32";
+    for (var i = 0; i < fish.length; i++) {
+      var f = fish[i];
+      var fadeIn = Math.min(1, (simClockNow - f.born) / 600);
+      fishLayerCtx.save();
+      fishLayerCtx.translate(f.x, f.y);
+      fishLayerCtx.rotate(f.angle + Math.sin(f.wobble) * 0.12);
+      fishLayerCtx.fillStyle = "rgba(" + col + "," + (0.55 * fadeIn) + ")";
+      drawFishShape(fishLayerCtx, f.size);
+      fishLayerCtx.fill();
+      fishLayerCtx.restore();
+    }
+  }
+
+  canvas.addEventListener("contextmenu", function (e) {
+    e.preventDefault();
+    ensureAudioStarted();
+    var r = canvas.getBoundingClientRect();
+    spawnFish(e.clientX - r.left, e.clientY - r.top);
+    ensureRunning();
   });
 
   // ---------- interaction ----------
@@ -1507,6 +1548,7 @@
     handleMove(e.clientX, e.clientY);
   });
   canvas.addEventListener("pointerdown", function (e) {
+    if (e.button !== 0) return;
     ensureAudioStarted();
     isDown = true; downX = e.clientX; downY = e.clientY; downT = performance.now();
     canvas.setPointerCapture(e.pointerId);
@@ -1626,9 +1668,9 @@
     waveLayerEl.width = W * dpr; waveLayerEl.height = H * dpr;
     waveLayerEl.style.width = W + "px"; waveLayerEl.style.height = H + "px";
     waveLayerCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    weatherLayerEl.width = W * dpr; weatherLayerEl.height = H * dpr;
-    weatherLayerEl.style.width = W + "px"; weatherLayerEl.style.height = H + "px";
-    weatherLayerCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    fishLayerEl.width = W * dpr; fishLayerEl.height = H * dpr;
+    fishLayerEl.style.width = W + "px"; fishLayerEl.style.height = H + "px";
+    fishLayerCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
   window.addEventListener("resize", resize);
 
@@ -1684,6 +1726,7 @@
   function resetPiece() {
     ctx.clearRect(0, 0, W, H);
     particles.length = 0;
+    fish.length = 0;
     vx.fill(0); vy.fill(0); vx0.fill(0); vy0.fill(0); vxTmp.fill(0); vyTmp.fill(0);
     waveA.fill(0); waveB.fill(0);
   }
