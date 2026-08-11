@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>書道 — 筆圧でにじむデジタル書道 | Shodo</title>
+<meta name="description" content="指の押しつけ具合(接地面積)や3D Touch/Apple Pencilの筆圧を検出して、太さと墨のにじみが変わるスマホ向け書道シミュレーター。">
+<meta name="theme-color" content="#e8e1d0">
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20100%20100%22%3E%3Ctext%20y%3D%22.9em%22%20font-size%3D%2290%22%3E%F0%9F%96%8C%EF%B8%8F%3C%2Ftext%3E%3C%2Fsvg%3E">
+<style>
+  :root{
+    --bg:#e4ded0; --bg2:#d8d0bd; --fg:#262420; --fg-muted:#6b6a64;
+    --panel-bg:rgba(238,235,224,0.85); --panel-border:rgba(38,36,32,0.16);
+    --accent:#8a6a24;
+    --ink-sumi:#262420; --ink-shu:#a8442c; --ink-ai:#2c4a72; --ink-kin:#8a6a24;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#1b1912; --bg2:#242118; --fg:#e9e6dd; --fg-muted:#a29d8f;
+      --panel-bg:rgba(27,25,18,0.85); --panel-border:rgba(233,230,221,0.14); }
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;height:100%;overflow:hidden;overscroll-behavior:none;
+    background:var(--bg); color:var(--fg); font-family:"Hiragino Mincho ProN","Yu Mincho",serif;
+    touch-action:none;}
+  #app{display:flex;flex-direction:column;align-items:center;height:100%;padding:env(safe-area-inset-top) 10px env(safe-area-inset-bottom);}
+  header{width:100%;max-width:480px;text-align:center;padding:8px 4px 4px;flex:0 0 auto;}
+  header h1{font-size:19px;margin:0 0 2px;letter-spacing:.08em;}
+  header p{font-size:11.5px;color:var(--fg-muted);margin:0;line-height:1.5;}
+  #stage{position:relative;flex:1 1 auto;min-height:0;width:100%;max-width:480px;
+    display:flex;align-items:center;justify-content:center;margin:6px 0;}
+  #paper{width:100%;height:100%;max-width:480px;max-height:100%;aspect-ratio:3/4;
+    border-radius:4px;box-shadow:0 6px 24px rgba(0,0,0,.25);touch-action:none;background:#efe9da;}
+  #meterWrap{position:absolute;top:8px;right:8px;width:74px;background:var(--panel-bg);
+    border:1px solid var(--panel-border);border-radius:8px;padding:6px 8px;font-size:10px;
+    color:var(--fg-muted);backdrop-filter:blur(4px);pointer-events:none;opacity:0;transition:opacity .15s;}
+  #meterWrap.show{opacity:1;}
+  #meterBarBg{width:100%;height:6px;background:rgba(120,110,90,.3);border-radius:3px;margin-top:4px;overflow:hidden;}
+  #meterBar{height:100%;width:0%;background:var(--accent);border-radius:3px;transition:width .06s linear;}
+  #meterMode{display:block;margin-top:3px;font-size:9px;}
+  footer{width:100%;max-width:480px;flex:0 0 auto;padding:4px 2px 8px;}
+  #colors{display:flex;justify-content:center;gap:10px;margin-bottom:8px;}
+  .swatch{width:34px;height:34px;border-radius:50%;border:2px solid var(--panel-border);
+    cursor:pointer;box-shadow:inset 0 0 0 2px rgba(255,255,255,.15);}
+  .swatch.active{border-color:var(--accent);box-shadow:0 0 0 3px rgba(138,106,36,.35);}
+  #sizeRow{display:flex;align-items:center;gap:8px;padding:0 8px;margin-bottom:8px;}
+  #sizeRow label{font-size:11px;color:var(--fg-muted);white-space:nowrap;}
+  #sizeRow input[type=range]{flex:1;}
+  #btnRow{display:flex;gap:8px;}
+  #btnRow button{flex:1;padding:11px 6px;font-size:13px;border:1px solid var(--panel-border);
+    border-radius:8px;background:var(--panel-bg);color:var(--fg);font-family:inherit;cursor:pointer;}
+  #btnRow button:active{transform:translateY(1px);}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>書道 — デジアナ習字</h1>
+    <p>指で紙をなぞってください。強く押しつけるほど太く濃くにじみます。<br>対応端末では3D Touch/Apple Pencilの筆圧をそのまま使用します。</p>
+  </header>
+  <div id="stage">
+    <canvas id="paper"></canvas>
+    <div id="meterWrap">
+      筆圧
+      <div id="meterBarBg"><div id="meterBar"></div></div>
+      <span id="meterMode">-</span>
+    </div>
+  </div>
+  <footer>
+    <div id="colors">
+      <div class="swatch active" data-color="sumi" style="background:#262420"></div>
+      <div class="swatch" data-color="shu" style="background:#a8442c"></div>
+      <div class="swatch" data-color="ai" style="background:#2c4a72"></div>
+      <div class="swatch" data-color="kin" style="background:#8a6a24"></div>
+    </div>
+    <div id="sizeRow">
+      <label>筆の太さ</label>
+      <input type="range" id="sizeSlider" min="1" max="10" value="5" step="1">
+    </div>
+    <div id="btnRow">
+      <button id="clearBtn">新しい半紙</button>
+      <button id="saveBtn">画像を保存</button>
+    </div>
+  </footer>
+</div>
+<script>
+(function(){
+  "use strict";
+  const canvas = document.getElementById('paper');
+  const ctx = canvas.getContext('2d', {alpha:false});
+  const meterWrap = document.getElementById('meterWrap');
+  const meterBar = document.getElementById('meterBar');
+  const meterMode = document.getElementById('meterMode');
+
+  // ---- logical (device-independent) drawing resolution ----
+  const LW = 360, LH = 480; // logical px, 3:4
+  const GW = 90, GH = 120;  // ink field grid (4 logical px / cell)
+  let DPR = Math.max(1, Math.min(window.devicePixelRatio || 1, 3));
+
+  function resize(){
+    const rect = canvas.getBoundingClientRect();
+    DPR = Math.max(1, Math.min(window.devicePixelRatio || 1, 3));
+    canvas.width = Math.round(rect.width * DPR);
+    canvas.height = Math.round(rect.height * DPR);
+  }
+  window.addEventListener('resize', resize);
+  window.addEventListener('orientationchange', ()=>setTimeout(resize,200));
+
+  // ---- ink field: wet(mobile ink) + stain(fixed/dried) + shared color ----
+  let wet = new Float32Array(GW*GH);
+  let wet2 = new Float32Array(GW*GH);
+  let stain = new Float32Array(GW*GH);
+  let colR = new Float32Array(GW*GH);
+  let colG = new Float32Array(GW*GH);
+  let colB = new Float32Array(GW*GH);
+  let anyWet = false;
+
+  const COLORS = {
+    sumi:[0x26,0x24,0x20], shu:[0xa8,0x44,0x2c], ai:[0x2c,0x4a,0x72], kin:[0x8a,0x6a,0x24]
+  };
+  let currentColor = COLORS.sumi;
+
+  function idx(x,y){ return y*GW+x; }
+
+  function depositAt(gx, gy, amount, r, col){
+    const r2 = r*r;
+    const x0 = Math.max(0, Math.floor(gx-r)), x1 = Math.min(GW-1, Math.ceil(gx+r));
+    const y0 = Math.max(0, Math.floor(gy-r)), y1 = Math.min(GH-1, Math.ceil(gy+r));
+    for(let y=y0;y<=y1;y++){
+      for(let x=x0;x<=x1;x++){
+        const dx=x-gx, dy=y-gy, d2=dx*dx+dy*dy;
+        if (d2>r2) continue;
+        const falloff = 1 - d2/r2; // soft brush edge
+        const amt = amount * falloff;
+        const i = idx(x,y);
+        const total = wet[i] + stain[i] + amt;
+        if (total > 1e-6){
+          colR[i] = (colR[i]*(wet[i]+stain[i]) + col[0]*amt) / total;
+          colG[i] = (colG[i]*(wet[i]+stain[i]) + col[1]*amt) / total;
+          colB[i] = (colB[i]*(wet[i]+stain[i]) + col[2]*amt) / total;
+        }
+        wet[i] = Math.min(1.4, wet[i] + amt);
+      }
+    }
+    anyWet = true;
+  }
+
+  const K_DIFF = 0.16, DRY_RATE = 0.975, ABSORB = 0.05, EPS = 0.0015;
+
+  function stepSimulation(){
+    if (!anyWet) return;
+    let stillWet = false;
+    for (let y=0;y<GH;y++){
+      for (let x=0;x<GW;x++){
+        const i = idx(x,y);
+        const w = wet[i];
+        const wl = x>0 ? wet[i-1] : w, wr = x<GW-1 ? wet[i+1] : w;
+        const wu = y>0 ? wet[i-GW] : w, wd = y<GH-1 ? wet[i+GW] : w;
+        const avg = (wl+wr+wu+wd)/4;
+        const flow = K_DIFF*(avg - w);
+        let nw = w + flow;
+
+        if (flow > 0){
+          let wSum=1e-6, rS=0,gS=0,bS=0;
+          if (x>0){ wSum+=wl; rS+=colR[i-1]*wl; gS+=colG[i-1]*wl; bS+=colB[i-1]*wl; }
+          if (x<GW-1){ wSum+=wr; rS+=colR[i+1]*wr; gS+=colG[i+1]*wr; bS+=colB[i+1]*wr; }
+          if (y>0){ wSum+=wu; rS+=colR[i-GW]*wu; gS+=colG[i-GW]*wu; bS+=colB[i-GW]*wu; }
+          if (y<GH-1){ wSum+=wd; rS+=colR[i+GW]*wd; gS+=colG[i+GW]*wd; bS+=colB[i+GW]*wd; }
+          const inR=rS/wSum, inG=gS/wSum, inB=bS/wSum;
+          const totalAfter = w + flow;
+          if (totalAfter > 1e-6){
+            colR[i] = (colR[i]*w + inR*flow)/totalAfter;
+            colG[i] = (colG[i]*w + inG*flow)/totalAfter;
+            colB[i] = (colB[i]*w + inB*flow)/totalAfter;
+          }
+        }
+
+        const absorbed = nw*ABSORB;
+        nw = nw*DRY_RATE - absorbed;
+        if (nw < EPS) nw = 0; else stillWet = true;
+        wet2[i] = nw;
+        if (absorbed > 0){
+          stain[i] = Math.min(1.2, stain[i] + absorbed);
+        }
+      }
+    }
+    const tmp = wet; wet = wet2; wet2 = tmp;
+    anyWet = stillWet;
+  }
+
+  // ---- offscreen low-res ink layer, upscaled with smoothing for a soft bleed ----
+  const inkCanvas = document.createElement('canvas');
+  inkCanvas.width = GW; inkCanvas.height = GH;
+  const inkCtx = inkCanvas.getContext('2d');
+  const inkImg = inkCtx.createImageData(GW, GH);
+
+  function renderInkLayer(){
+    const d = inkImg.data;
+    for (let i=0;i<GW*GH;i++){
+      const amt = Math.min(1, stain[i] + wet[i]*0.9);
+      const o = i*4;
+      d[o]   = colR[i];
+      d[o+1] = colG[i];
+      d[o+2] = colB[i];
+      d[o+3] = Math.round(amt*255);
+    }
+    inkCtx.putImageData(inkImg, 0, 0);
+  }
+
+  // ---- paper texture (generated once, static) ----
+  const paperTex = document.createElement('canvas');
+  paperTex.width = LW; paperTex.height = LH;
+  (function buildPaper(){
+    const pctx = paperTex.getContext('2d');
+    const base = getComputedStyle(document.documentElement).getPropertyValue('--bg2') || '#e9e2cf';
+    pctx.fillStyle = '#efe9da';
+    pctx.fillRect(0,0,LW,LH);
+    for (let i=0;i<2200;i++){
+      const x = Math.random()*LW, y = Math.random()*LH;
+      const a = 0.02 + Math.random()*0.05;
+      pctx.fillStyle = Math.random()<0.5 ? `rgba(160,150,120,${a})` : `rgba(255,255,250,${a})`;
+      const w = 2+Math.random()*10, h = 0.6+Math.random()*1.4;
+      pctx.save();
+      pctx.translate(x,y);
+      pctx.rotate(Math.random()*Math.PI);
+      pctx.fillRect(-w/2,-h/2,w,h);
+      pctx.restore();
+    }
+  })();
+
+  function draw(){
+    ctx.imageSmoothingEnabled = false;
+    ctx.setTransform(canvas.width/LW, 0, 0, canvas.height/LH, 0, 0);
+    ctx.drawImage(paperTex, 0, 0, LW, LH);
+    ctx.imageSmoothingEnabled = true;
+    ctx.globalCompositeOperation = 'multiply';
+    ctx.drawImage(inkCanvas, 0, 0, GW, GH, 0, 0, LW, LH);
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  // ---- pointer input: pressure via Pointer Events, with contact-area fallback ----
+  let drawing = false;
+  let lastX=0, lastY=0, curX=0, curY=0, curPressure=0.4, baseArea=null, smoothedP=0.4;
+  let usingRealPressure = false;
+
+  function toLogical(clientX, clientY){
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: (clientX-rect.left) * (LW/rect.width),
+      y: (clientY-rect.top) * (LH/rect.height)
+    };
+  }
+
+  function estimatePressure(e){
+    if (e.pointerType === 'pen' && e.pressure > 0){
+      usingRealPressure = true;
+      return e.pressure;
+    }
+    if (e.pointerType === 'touch' && typeof e.pressure === 'number' && e.pressure > 0 && e.pressure !== 0.5){
+      usingRealPressure = true; // genuine 3D Touch / force-capable screen
+      return e.pressure;
+    }
+    if (e.width && e.height){
+      const area = e.width*e.height;
+      if (baseArea == null) baseArea = area;
+      baseArea = baseArea*0.98 + Math.min(area,baseArea*1.4)*0.02; // slow drift so it recalibrates to grip
+      const ratio = area/Math.max(1,baseArea);
+      usingRealPressure = false;
+      return Math.max(0.15, Math.min(1, 0.35 + (ratio-1)*0.9));
+    }
+    usingRealPressure = false;
+    return e.pointerType === 'mouse' ? 0.55 : 0.4;
+  }
+
+  function onDown(e){
+    canvas.setPointerCapture(e.pointerId);
+    drawing = true;
+    baseArea = null;
+    const p = toLogical(e.clientX, e.clientY);
+    lastX = curX = p.x; lastY = curY = p.y;
+    smoothedP = estimatePressure(e);
+    meterWrap.classList.add('show');
+    e.preventDefault();
+  }
+  function onMove(e){
+    if (!drawing) return;
+    const p = toLogical(e.clientX, e.clientY);
+    curX = p.x; curY = p.y;
+    const raw = estimatePressure(e);
+    smoothedP = smoothedP*0.7 + raw*0.3;
+    curPressure = smoothedP;
+    meterBar.style.width = Math.round(curPressure*100)+'%';
+    meterMode.textContent = usingRealPressure ? '実圧力検出' : '接触面積で推定';
+    e.preventDefault();
+  }
+  function onUp(e){
+    drawing = false;
+    meterWrap.classList.remove('show');
+  }
+  canvas.addEventListener('pointerdown', onDown);
+  canvas.addEventListener('pointermove', onMove);
+  canvas.addEventListener('pointerup', onUp);
+  canvas.addEventListener('pointercancel', onUp);
+
+  const sizeSlider = document.getElementById('sizeSlider');
+  function brushBaseRadius(){
+    return 1.6 + (parseInt(sizeSlider.value,10)/10)*5.5; // grid-cell units
+  }
+
+  function strokeStep(){
+    if (!drawing) return;
+    const dx = curX-lastX, dy = curY-lastY;
+    const dist = Math.hypot(dx,dy);
+    const gx0 = lastX/4, gy0 = lastY/4, gx1 = curX/4, gy1 = curY/4;
+    const r = brushBaseRadius() * (0.55 + curPressure*0.85);
+    const step = Math.max(0.6, r*0.5);
+    const n = Math.max(1, Math.ceil(dist/4/step));
+    for (let i=0;i<=n;i++){
+      const t = i/n;
+      const gx = gx0 + (gx1-gx0)*t, gy = gy0 + (gy1-gy0)*t;
+      depositAt(gx, gy, 0.09 + curPressure*0.05, r, currentColor);
+    }
+    // resting brush (little/no movement) keeps pooling ink, like real sumi ink
+    if (dist < 1.5){
+      depositAt(curX/4, curY/4, 0.03 + curPressure*0.02, r*0.8, currentColor);
+    }
+    lastX = curX; lastY = curY;
+  }
+
+  function loop(){
+    strokeStep();
+    stepSimulation();
+    renderInkLayer();
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  // ---- UI: color swatches, clear, save ----
+  document.querySelectorAll('.swatch').forEach(sw=>{
+    sw.addEventListener('click', ()=>{
+      document.querySelectorAll('.swatch').forEach(s=>s.classList.remove('active'));
+      sw.classList.add('active');
+      currentColor = COLORS[sw.dataset.color];
+    });
+  });
+
+  document.getElementById('clearBtn').addEventListener('click', ()=>{
+    wet.fill(0); wet2.fill(0); stain.fill(0); colR.fill(0); colG.fill(0); colB.fill(0);
+    anyWet = false;
+  });
+
+  document.getElementById('saveBtn').addEventListener('click', ()=>{
+    const off = document.createElement('canvas');
+    off.width = LW; off.height = LH;
+    const octx = off.getContext('2d');
+    octx.drawImage(paperTex, 0,0);
+    octx.globalCompositeOperation = 'multiply';
+    octx.drawImage(inkCanvas, 0,0,GW,GH, 0,0,LW,LH);
+    off.toBlob(blob=>{
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const d = new Date();
+      const pad = n=>String(n).padStart(2,'0');
+      a.download = `shodo_${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}.png`;
+      a.href = url;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(()=>URL.revokeObjectURL(url), 4000);
+    });
+  });
+
+  resize();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
