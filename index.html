@@ -374,10 +374,55 @@
     color: var(--fg-muted);
   }
 
+  /* touch-only action buttons: standing in for keyboard/mouse-only inputs
+     (Shift+click to mix, right-click to spawn a fish, Enter to transfer)
+     that a phone has no way to perform otherwise. */
+  .actions {
+    display: none;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  @media (pointer: coarse) {
+    .actions { display: flex; }
+  }
+  .action-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 4px 8px;
+    border-radius: 10px;
+    border: 1px solid var(--panel-border);
+    background: transparent;
+    color: var(--fg);
+    font-family: inherit;
+    cursor: pointer;
+    line-height: 1;
+  }
+  .action-btn .action-icon { font-size: 17px; }
+  .action-btn .action-label {
+    font-size: 9px;
+    color: var(--fg-muted);
+    letter-spacing: 0.02em;
+  }
+  .action-btn[aria-pressed="true"] {
+    background: var(--fg);
+    color: var(--water);
+  }
+  .action-btn[aria-pressed="true"] .action-label { color: var(--water); }
+  .action-btn:active { transform: scale(0.94); }
+
   @media (max-width: 640px) {
     .title { top: 2.2vh; right: 2.2vh; font-size: 18px; }
     .controls { left: 2vh; bottom: 2vh; padding: 11px 12px; }
     .swatch { width: 24px; height: 24px; }
+    .action-btn { min-width: 40px; min-height: 40px; }
   }
 
   .transfer-overlay {
@@ -484,8 +529,20 @@
       <button class="swatch" type="button" data-pigment="1" style="--sw: var(--ink-ai)" aria-label="藍" aria-pressed="false"></button>
       <button class="swatch" type="button" data-pigment="2" style="--sw: var(--ink-shu)" aria-label="朱" aria-pressed="false"></button>
       <button class="swatch" type="button" data-pigment="3" style="--sw: var(--ink-kin)" aria-label="金" aria-pressed="false"></button>
+      <button class="swatch" type="button" id="mixSwatch" data-pigment="4" aria-label="混色" aria-pressed="false" hidden></button>
     </div>
-    <p class="hint">クリックで一滴垂らす／マウスを動かして水面をかき混ぜる／Enterで紙に写し取る／Spaceで時を止める</p>
+    <div class="actions" role="group" aria-label="スマホ用の操作ボタン">
+      <button class="action-btn" type="button" id="btnShift" aria-pressed="false" aria-label="混色モード切替(Shiftキー相当)">
+        <span class="action-icon" aria-hidden="true">⇧</span><span class="action-label">混色</span>
+      </button>
+      <button class="action-btn" type="button" id="btnFish" aria-label="魚を放つ(右クリック相当)">
+        <span class="action-icon" aria-hidden="true">🐟</span><span class="action-label">魚</span>
+      </button>
+      <button class="action-btn" type="button" id="btnTransfer" aria-label="紙に写し取る(Enterキー相当)">
+        <span class="action-icon" aria-hidden="true">⏎</span><span class="action-label">写す</span>
+      </button>
+    </div>
+    <p class="hint">クリックで一滴垂らす／マウスを動かして水面をかき混ぜる／Shift+色クリックで混色／Enterで紙に写し取る／Spaceで時を止める</p>
   </div>
 </div>
 
@@ -513,9 +570,11 @@
       <ul>
         <li><b>クリック</b> — 選んだ色の墨を一滴垂らします。垂らすたびに広がり方が微妙に変わります。</li>
         <li><b>マウスを動かす</b> — 指で水面をかき混ぜるように、墨と波紋が反応します。</li>
-        <li><b>Enterキー</b> — 今の模様を紙に写し取ります(左右反転・彩度アップ)。画像として保存もできます。</li>
+        <li><b>Shiftキーを押しながら色をクリック</b> — 今の色と混ぜて新しい色を作ります。スマホでは「⇧混色」ボタンでON/OFFできます。</li>
+        <li><b>Enterキー</b> — 今の模様を紙に写し取ります(左右反転・彩度アップ)。画像として保存もできます。スマホでは「⏎写す」ボタンから。</li>
         <li><b>Ctrlキー</b> — この詳細画面と水面の画面を切り替えます。</li>
         <li><b>Spaceキー</b> — 時を止めます(もう一度で再開)。止まっている間も墨は垂らせます。長押しすると早送りします。</li>
+        <li><b>右クリック</b> — その場に魚を放ちます。スマホでは「🐟魚」ボタンから。</li>
       </ul>
     </section>
     <section>
@@ -661,9 +720,10 @@
   }
   var water = { r: 238, g: 240, b: 236 };
   var pigmentColors = [
-    { r: 38, g: 36, b: 32 }, { r: 44, g: 74, b: 114 }, { r: 168, g: 68, b: 44 }, { r: 138, g: 106, b: 36 }
+    { r: 38, g: 36, b: 32 }, { r: 44, g: 74, b: 114 }, { r: 168, g: 68, b: 44 }, { r: 138, g: 106, b: 36 },
+    { r: 100, g: 90, b: 80 } // index 4: user-mixed color (Shift+click / 混色ボタン), replaced once mixed
   ];
-  var pigmentCSS = ["", "", "", ""];
+  var pigmentCSS = ["", "", "", "", ""];
   var isDark = false;
   function refreshColors() {
     var cs = getComputedStyle(document.documentElement);
@@ -1683,12 +1743,74 @@
   canvas.addEventListener("pointerleave", function () { lastX = null; lastY = null; });
 
   var swatches = Array.prototype.slice.call(document.querySelectorAll(".swatch"));
+  var mixSwatch = document.getElementById("mixSwatch");
+  var btnShift = document.getElementById("btnShift");
+  var mixArmed = false; // sticky "Shift held" for touch, toggled by the 混色 button
+  var shiftPhysicallyDown = false;
+
+  function selectSwatch(btn) {
+    swatches.forEach(function (b) { b.setAttribute("aria-pressed", b === btn ? "true" : "false"); });
+  }
+
+  function disarmMix() {
+    if (mixArmed) {
+      mixArmed = false;
+      btnShift.setAttribute("aria-pressed", "false");
+    }
+  }
+
+  function mixPigments(idxA, idxB) {
+    var a = pigmentColors[idxA], b = pigmentColors[idxB];
+    var mixed = {
+      r: Math.round((a.r + b.r) / 2),
+      g: Math.round((a.g + b.g) / 2),
+      b: Math.round((a.b + b.b) / 2)
+    };
+    pigmentColors[4] = mixed;
+    pigmentCSS[4] = "rgb(" + mixed.r + "," + mixed.g + "," + mixed.b + ")";
+    mixSwatch.hidden = false;
+    mixSwatch.style.setProperty("--sw", pigmentCSS[4]);
+    currentPigment = 4;
+    selectSwatch(mixSwatch);
+    disarmMix();
+  }
+
   swatches.forEach(function (btn) {
     btn.addEventListener("click", function () {
       ensureAudioStarted();
-      currentPigment = parseInt(btn.getAttribute("data-pigment"), 10);
-      swatches.forEach(function (b) { b.setAttribute("aria-pressed", b === btn ? "true" : "false"); });
+      if (btn.hidden) return;
+      var idx = parseInt(btn.getAttribute("data-pigment"), 10);
+      if ((mixArmed || shiftPhysicallyDown) && idx !== currentPigment) {
+        mixPigments(currentPigment, idx);
+      } else {
+        currentPigment = idx;
+        selectSwatch(btn);
+      }
     });
+  });
+
+  // Shift+click on desktop mixes the clicked color into the current one --
+  // the 混色 button below is the same gesture made "stickable" for touch,
+  // since a phone has no modifier key to hold while tapping.
+  window.addEventListener("keydown", function (e) { if (e.key === "Shift") shiftPhysicallyDown = true; });
+  window.addEventListener("keyup", function (e) { if (e.key === "Shift") shiftPhysicallyDown = false; });
+
+  btnShift.addEventListener("click", function () {
+    mixArmed = !mixArmed;
+    btnShift.setAttribute("aria-pressed", mixArmed ? "true" : "false");
+  });
+
+  // right-click spawns a fish at the cursor; the touch equivalent has no
+  // cursor position to reuse, so it drops one near the middle of the tank.
+  document.getElementById("btnFish").addEventListener("click", function () {
+    ensureAudioStarted();
+    spawnFish(W / 2 + (Math.random() - 0.5) * W * 0.3, H / 2 + (Math.random() - 0.5) * H * 0.3);
+    ensureRunning();
+  });
+
+  document.getElementById("btnTransfer").addEventListener("click", function () {
+    ensureAudioStarted();
+    if (mode === "play" && transferOverlay.hidden) openTransfer();
   });
 
   // ---------- info / play screens (Ctrl toggles, or the play/back buttons) ----------
