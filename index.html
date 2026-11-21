@@ -450,7 +450,34 @@
     -webkit-mask-image: radial-gradient(closest-side, #000 68%, transparent 100%);
     mask-image: radial-gradient(closest-side, #000 68%, transparent 100%);   /* the water ends as a soft pond, not a rectangle */
   }
-  body[data-ar="on"] .hint { display: none; }   /* keep the panel small so it doesn't cover the pond */
+  /* while AR is on, almost all UI goes away: just a small exit button and a "..." that opens colors / placement / size */
+  body[data-ar="on"] .hint,
+  body[data-ar="on"] .title,
+  body[data-ar="on"] .back-hint { display: none; }
+  body[data-ar="on"] .controls {
+    padding: 4px; gap: 8px; background: transparent; border-color: transparent;
+    -webkit-backdrop-filter: none; backdrop-filter: none;
+  }
+  body[data-ar="on"]:not([data-ar-more]) .controls .swatches,
+  body[data-ar="on"]:not([data-ar-more]) .controls .actions,
+  body[data-ar="on"]:not([data-ar-more]) .controls .ar-floor-row { display: none !important; }
+  body[data-ar="on"][data-ar-more] .controls {
+    padding: 10px 12px; background: var(--panel-bg); border-color: var(--panel-border);
+    -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  }
+  .ar-top-row { display: flex; gap: 8px; align-self: stretch; }
+  .ar-top-row .ar-btn { flex: 1; align-self: auto; }
+  .ar-more-btn { display: none; flex: 0 0 auto !important; padding: 9px 16px; }
+  body[data-ar="on"] .ar-more-btn { display: block; }
+  body[data-ar="on"] .ar-top-row .ar-btn {
+    color: #fff; background: rgba(0, 0, 0, 0.5); border-color: rgba(255, 255, 255, 0.35);
+    -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  }
+  body[data-ar="on"] .ar-top-row .ar-btn[aria-pressed="true"] { background: rgba(0, 0, 0, 0.5); color: #fff; }
+  body[data-ar="on"][data-ar-more] .ar-more-btn { background: #fff; color: #262420; }
+  body[data-ar="on"] .ar-note {
+    color: #fff; background: rgba(0, 0, 0, 0.5); border-radius: 10px; padding: 6px 10px;
+  }
   .ar-floor-row { display: none; align-items: center; gap: 10px; flex-wrap: wrap; }
   body[data-ar="on"] .ar-floor-row { display: flex; }
   .ar-floor-row .ar-btn { align-self: auto; }
@@ -596,7 +623,10 @@
       <button class="swatch" type="button" data-pigment="3" style="--sw: var(--ink-kin)" aria-label="金" aria-pressed="false"></button>
       <button class="swatch" type="button" id="mixSwatch" data-pigment="4" aria-label="混色" aria-pressed="false" hidden></button>
     </div>
-    <button class="ar-btn" type="button" id="btnAR" aria-pressed="false" aria-label="ARモード(カメラの映像に重ねて、手で水面に触れる)">◎ ARモード</button>
+    <div class="ar-top-row">
+      <button class="ar-btn" type="button" id="btnAR" aria-pressed="false" aria-label="ARモード(床に水面を広げ、手で触れる)">◎ ARモード</button>
+      <button class="ar-btn ar-more-btn" type="button" id="btnArMore" aria-pressed="false" aria-label="色や広さの設定を開く">⋯</button>
+    </div>
     <p class="ar-note" id="arNote" hidden></p>
     <div class="ar-floor-row">
       <button class="ar-btn" type="button" id="btnArPlace" aria-label="いま向いている方向の床に水面を置き直す">↻ 床に置き直す</button>
@@ -2324,6 +2354,8 @@
     arLayers.forEach(function (el) { el.style.transform = ""; el.style.visibility = ""; });
     delete document.body.dataset.ar;
     btnAR.setAttribute("aria-pressed", "false");
+    btnAR.textContent = "◎ ARモード";
+    arSetMore(false);
     if (arSavedTheme !== undefined) {
       if (arSavedTheme === null) document.documentElement.removeAttribute("data-theme");
       else document.documentElement.setAttribute("data-theme", arSavedTheme);
@@ -2360,6 +2392,7 @@
       arOn = true;
       document.body.dataset.ar = "on";
       btnAR.setAttribute("aria-pressed", "true");
+      btnAR.textContent = "✕ AR終了";
       ensureRunning();
       requestAnimationFrame(arLoop);
       if (!arLandmarker) {
@@ -2378,6 +2411,12 @@
       arBusy = false; btnAR.disabled = false;
     }
   }
+  var btnArMore = document.getElementById("btnArMore");
+  function arSetMore(open) {
+    if (open) document.body.dataset.arMore = "1"; else delete document.body.dataset.arMore;
+    btnArMore.setAttribute("aria-pressed", open ? "true" : "false");
+  }
+  btnArMore.addEventListener("click", function () { arSetMore(!document.body.dataset.arMore); });
   btnAR.addEventListener("click", function () { setAR(!arOn); });
   document.getElementById("btnArPlace").addEventListener("click", function () {
     arPose.cur = arPose.tgt.slice();
