@@ -433,7 +433,7 @@
     inset: 0;
     display: none;
     pointer-events: none;
-    background: rgba(238, 240, 236, 0.22);   /* a faint water sheen so black ink still reads in a dark room */
+    background: rgba(238, 240, 236, 0.34);   /* the sheen of the water on the floor: also keeps black ink readable in a dark room */
   }
   #arHud { width: 100%; height: 100%; pointer-events: none; }
   body[data-ar="on"] #arVideo,
@@ -441,6 +441,21 @@
   /* the ink canvas carries a water-colored haze as it fades; multiplying it
      keeps that haze from whitening the camera image. */
   body[data-ar="on"] #c { mix-blend-mode: multiply; }
+  /* floor mode: the three water layers lie on the floor (matrix3d set from the gyro every frame) */
+  body[data-ar="on"] .ar-film,
+  body[data-ar="on"] #c,
+  body[data-ar="on"] #waveLayer,
+  body[data-ar="on"] #fishLayer {
+    transform-origin: 0 0;
+    -webkit-mask-image: radial-gradient(closest-side, #000 68%, transparent 100%);
+    mask-image: radial-gradient(closest-side, #000 68%, transparent 100%);   /* the water ends as a soft pond, not a rectangle */
+  }
+  body[data-ar="on"] .hint { display: none; }   /* keep the panel small so it doesn't cover the pond */
+  .ar-floor-row { display: none; align-items: center; gap: 10px; flex-wrap: wrap; }
+  body[data-ar="on"] .ar-floor-row { display: flex; }
+  .ar-floor-row .ar-btn { align-self: auto; }
+  .ar-size { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--fg-muted); letter-spacing: 0.05em; }
+  .ar-size input { width: 110px; accent-color: var(--fg); }
   .ar-btn {
     font-family: inherit;
     font-size: 12px;
@@ -583,6 +598,10 @@
     </div>
     <button class="ar-btn" type="button" id="btnAR" aria-pressed="false" aria-label="ARモード(カメラの映像に重ねて、手で水面に触れる)">◎ ARモード</button>
     <p class="ar-note" id="arNote" hidden></p>
+    <div class="ar-floor-row">
+      <button class="ar-btn" type="button" id="btnArPlace" aria-label="いま向いている方向の床に水面を置き直す">↻ 床に置き直す</button>
+      <label class="ar-size">広さ<input type="range" id="arSize" min="0.6" max="2.4" step="0.05" value="1.2"></label>
+    </div>
     <div class="actions" role="group" aria-label="スマホ用の操作ボタン">
       <button class="action-btn" type="button" id="btnShift" aria-pressed="false" aria-label="混色モード切替(Shiftキー相当)">
         <span class="action-icon" aria-hidden="true">⇧</span><span class="action-label">混色</span>
@@ -626,7 +645,7 @@
         <li><b>Enterキー</b> — 今の模様を紙に写し取ります(左右反転・彩度アップ)。画像として保存もできます。スマホでは「⏎写す」ボタンから。</li>
         <li><b>Ctrlキー</b> — この詳細画面と水面の画面を切り替えます。</li>
         <li><b>Spaceキー</b> — 時を止めます(もう一度で再開)。止まっている間も墨は垂らせます。長押しすると早送りします。</li>
-        <li><b>ARモード</b> — カメラの映像の上に水面を重ねます。スマホなら背面カメラの向こうでもう片方の手を動かすと、指先の動きが水流になり、<b>親指と人差し指をつまむ</b>と墨が一滴落ちます(つまんだまま動かすと墨が連なります)。手を近づけるほど大きな一滴になります。カメラはHTTPSのページでのみ使えます。</li>
+        <li><b>ARモード</b> — カメラの映像の中の<b>床</b>に、墨流しの水面が広がります。スマホを床の方へ傾けると、床の上の水たまりに見えます(スマホの向きは傾きセンサーで追います)。背面カメラの向こうでもう片方の手を動かすと、指先に見えている場所の水が流れ、<b>親指と人差し指をつまむ</b>と墨が一滴落ちます(つまんだまま動かすと墨が連なります)。手を近づけるほど大きな一滴になります。「床に置き直す」で、いま向いている方向に水面を置き直せます。カメラはHTTPSのページでのみ使えます。</li>
         <li><b>右クリック</b> — その場に魚を放ちます。スマホでは「🐟魚」ボタンから。</li>
       </ul>
     </section>
@@ -1680,8 +1699,8 @@
   canvas.addEventListener("contextmenu", function (e) {
     e.preventDefault();
     ensureAudioStarted();
-    var r = canvas.getBoundingClientRect();
-    spawnFish(e.clientX - r.left, e.clientY - r.top);
+    var c2 = toCanvas(e.clientX, e.clientY);
+    if (c2) spawnFish(c2[0], c2[1]);
     ensureRunning();
   });
 
@@ -1717,11 +1736,12 @@
   }
 
   function handleMove(clientX, clientY) {
-    var r = canvas.getBoundingClientRect();
-    var x = clientX - r.left, y = clientY - r.top;
+    var pt = toCanvas(clientX, clientY);   // (AR floor mode: the point on the floor under the pointer)
+    if (!pt) { lastX = null; lastY = null; return; }
+    var x = pt[0], y = pt[1];
     holdX = x; holdY = y;
     if (lastX !== null) {
-      var dx = clientX - lastX, dy = clientY - lastY;
+      var dx = x - lastX, dy = y - lastY;
       var speed = Math.hypot(dx, dy);
       if (speed > 0.4) {
         var cellW = W / Nx, cellH = H / Ny;
@@ -1733,7 +1753,7 @@
         ensureRunning();
       }
     }
-    lastX = clientX; lastY = clientY;
+    lastX = x; lastY = y;
   }
 
   function drop(x, y, scale) {
@@ -1779,8 +1799,8 @@
     if (e.button !== 0) return;
     ensureAudioStarted();
     isDown = true; downX = e.clientX; downY = e.clientY; downT = performance.now();
-    var r = canvas.getBoundingClientRect();
-    holdX = e.clientX - r.left; holdY = e.clientY - r.top;
+    var c0 = toCanvas(e.clientX, e.clientY) || [0, 0];
+    holdX = c0[0]; holdY = c0[1];
     canvas.setPointerCapture(e.pointerId);
   });
   canvas.addEventListener("pointerup", function (e) {
@@ -1788,8 +1808,8 @@
       var dist = Math.hypot(e.clientX - downX, e.clientY - downY);
       var dt = performance.now() - downT;
       if (dist < 6 && dt < 500) {
-        var r = canvas.getBoundingClientRect();
-        drop(e.clientX - r.left, e.clientY - r.top);
+        var c1 = toCanvas(e.clientX, e.clientY);
+        if (c1) drop(c1[0], c1[1]);
       }
     }
     isDown = false;
@@ -2009,20 +2029,12 @@
   function openTransfer() {
     transferCanvas.width = canvas.width;
     transferCanvas.height = canvas.height;
-    if (arOn && arVideo.videoWidth) {
-      // AR: keep it as a photo of what was on screen -- the camera frame with the ink multiplied in
-      drawArFrame(transferCtx, canvas.width, canvas.height);
-      transferCtx.globalCompositeOperation = "multiply";
-      transferCtx.drawImage(canvas, 0, 0);
-      transferCtx.globalCompositeOperation = "source-over";
-    } else {
-      transferCtx.save();
-      transferCtx.filter = "saturate(1.6) contrast(1.07) brightness(1.02)";
-      transferCtx.translate(canvas.width, 0);
-      transferCtx.scale(-1, 1);
-      transferCtx.drawImage(canvas, 0, 0);
-      transferCtx.restore();
-    }
+    transferCtx.save();
+    transferCtx.filter = "saturate(1.6) contrast(1.07) brightness(1.02)";
+    transferCtx.translate(canvas.width, 0);
+    transferCtx.scale(-1, 1);
+    transferCtx.drawImage(canvas, 0, 0);
+    transferCtx.restore();
     overlayOpen = true;
     transferOverlay.hidden = false;
   }
@@ -2060,48 +2072,162 @@
   document.getElementById("btnContinue").addEventListener("click", function () { closeTransfer(false); });
   document.getElementById("btnReset").addEventListener("click", function () { closeTransfer(true); });
 
-  // ---------- AR mode ----------
-  // The camera image sits behind the water and the ink canvas is multiplied
-  // onto it (see the body[data-ar] CSS). A hand tracker (MediaPipe Hand
-  // Landmarker, loaded only when AR is switched on) turns the real hand into
-  // the same two gestures the mouse already has: moving = stirring the water,
-  // pinching thumb + index = dropping a drop of ink (drop()).
+  // ---------- AR mode: the water lies on the floor ----------
+  // The camera image sits behind. The three water layers (ink / waves / fish)
+  // are laid on a floor plane in the camera's view: the phone's gyro gives its
+  // orientation, we assume it is held AR_CAM_H above the floor, and every
+  // frame the four corners of a rectangle on the floor are projected to the
+  // screen and handed to CSS as one perspective (matrix3d) transform.
+  // iOS Safari has no plane detection, so only *rotation* is tracked -- if you
+  // walk, the pond walks with you (re-place it with 「床に置き直す」).
+  // A hand tracker (MediaPipe Hand Landmarker, loaded only when AR is switched
+  // on) then does what the mouse does: moving = stirring, pinching = a drop.
   var arVideo = document.getElementById("arVideo");
   var arHud = document.getElementById("arHud");
   var arHudCtx = arHud.getContext("2d");
   var btnAR = document.getElementById("btnAR");
   var arNote = document.getElementById("arNote");
+  var arSize = document.getElementById("arSize");
+  var arLayers = [document.querySelector(".ar-film"), canvas, waveLayerEl, fishLayerEl];
   var arOn = false, arBusy = false, arMirror = false;
   var arStream = null, arLandmarker = null, arSavedTheme, arNoteTimer = 0;   // arSavedTheme: undefined = nothing to restore
-  var arHand = { pos: null, t: 0, size: null, pinch: false, lastDrop: 0, dropX: 0, dropY: 0, lastVT: -1 };
+  var arHand = { pos: null, posC: null, size: null, pinch: false, lastDrop: 0, dropX: 0, dropY: 0, lastVT: -1 };
   var AR_STIR_POINTS = [8, 12, 16, 20, 9, 0];   // fingertips + palm: where the hand pushes the water
   var AR_VISION = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
   var AR_MODEL = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
+  var AR_CAM_H = 1.3;     // assumed height of the phone above the floor (m)
+  var AR_VFOV = 63;       // assumed vertical field of view of the camera view (degrees)
+  var AR_DIST = 2.2;      // distance from the user to the middle of the pond (m)
+  var AR_DEFAULT_TILT = 62;
+  var arFloor = { R: null, f: 1, d: [0, 1], r: [1, 0], width: 1.2 };
+  var arPose = { cur: [0, AR_DEFAULT_TILT, 0], tgt: [0, AR_DEFAULT_TILT, 0], have: false, bound: false };
+  var DEG = Math.PI / 180;
 
   function arSay(msg, keep) {
     arNote.textContent = msg; arNote.hidden = !msg;
     clearTimeout(arNoteTimer);
-    if (msg && !keep) arNoteTimer = setTimeout(function () { arNote.hidden = true; }, 6000);
+    if (msg && !keep) arNoteTimer = setTimeout(function () { arNote.hidden = true; }, 7000);
   }
 
-  // normalized video coords -> screen px (same math as object-fit: cover, with the mirror for a front camera)
+  // ----- device orientation -> rotation matrix (W3C: R = Rz(alpha) Rx(beta) Ry(gamma), device -> earth) -----
+  function arOnOrient(e) {
+    if (e.beta == null) return;
+    arPose.tgt = [e.alpha || 0, e.beta, e.gamma || 0];
+    arPose.have = true;
+  }
+  function arEnableMotion() {       // must be called straight from the tap (iOS asks for permission)
+    function bind() {
+      if (!arPose.bound) { window.addEventListener("deviceorientation", arOnOrient); arPose.bound = true; }
+      return true;
+    }
+    try {
+      if (typeof DeviceOrientationEvent !== "undefined" && typeof DeviceOrientationEvent.requestPermission === "function") {
+        return DeviceOrientationEvent.requestPermission().then(function (r) { return r === "granted" ? bind() : false; }, function () { return false; });
+      }
+      return Promise.resolve(bind());
+    } catch (e) { return Promise.resolve(false); }
+  }
+  function arRot() {
+    var c = arPose.cur, a = c[0] * DEG, b = c[1] * DEG, g = c[2] * DEG;
+    var cA = Math.cos(a), sA = Math.sin(a), cB = Math.cos(b), sB = Math.sin(b), cG = Math.cos(g), sG = Math.sin(g);
+    return [
+      [cA * cG - sA * sB * sG, -cB * sA, cG * sA * sB + cA * sG],
+      [cG * sA + cA * sB * sG, cA * cB, sA * sG - cA * cG * sB],
+      [-cB * sG, sB, cB * cG]
+    ];
+  }
+  function arPoseStep() {           // a little smoothing so the pond doesn't jitter with the sensor
+    var c = arPose.cur, t = arPose.tgt;
+    c[0] += (((t[0] - c[0] + 540) % 360) - 180) * 0.35;
+    c[1] += (t[1] - c[1]) * 0.35;
+    c[2] += (t[2] - c[2]) * 0.35;
+  }
+
+  // ----- floor geometry -----
+  // canvas px (x right, y down) -> point on the floor (camera at the origin, floor at z = -AR_CAM_H)
+  // The canvas top edge is the far edge of the pond.
+  function arFloorWorld(x, y) {
+    var Wm = arFloor.width, Dm = Wm * H / W;
+    var s = AR_DIST + (0.5 - y / H) * Dm, l = (x / W - 0.5) * Wm;
+    return [arFloor.d[0] * s + arFloor.r[0] * l, arFloor.d[1] * s + arFloor.r[1] * l, -AR_CAM_H];
+  }
+  function arProject(P) {           // earth-frame point -> screen px (null if it is behind the camera)
+    var R = arFloor.R;
+    var x = R[0][0] * P[0] + R[1][0] * P[1] + R[2][0] * P[2];
+    var y = R[0][1] * P[0] + R[1][1] * P[1] + R[2][1] * P[2];
+    var z = R[0][2] * P[0] + R[1][2] * P[1] + R[2][2] * P[2];
+    var depth = -z;
+    if (depth < 0.08) return null;
+    return [W / 2 + arFloor.f * x / depth, H / 2 - arFloor.f * y / depth];
+  }
+  // screen px -> canvas px, by casting a ray from the camera to the floor (null above the horizon)
+  function arFloorPoint(cx, cy) {
+    var R = arFloor.R; if (!R) return null;
+    var dx = (cx - W / 2) / arFloor.f, dy = -(cy - H / 2) / arFloor.f, dz = -1;
+    var ex = R[0][0] * dx + R[0][1] * dy + R[0][2] * dz;
+    var ey = R[1][0] * dx + R[1][1] * dy + R[1][2] * dz;
+    var ez = R[2][0] * dx + R[2][1] * dy + R[2][2] * dz;
+    if (ez > -1e-3) return null;
+    var t = -AR_CAM_H / ez, px = ex * t, py = ey * t;
+    var Wm = arFloor.width, Dm = Wm * H / W, d = arFloor.d, r = arFloor.r;
+    var s = px * d[0] + py * d[1] - AR_DIST, l = px * r[0] + py * r[1];
+    return [(l / Wm + 0.5) * W, (0.5 - s / Dm) * H];
+  }
+  function toCanvas(clientX, clientY) {
+    if (arOn && arFloor.R) return arFloorPoint(clientX, clientY);
+    var r = canvas.getBoundingClientRect();
+    return [clientX - r.left, clientY - r.top];
+  }
+  // 4-point homography (src -> dst), h33 = 1
+  function arHomography(src, dst) {
+    var A = [], i, j, k;
+    for (i = 0; i < 4; i++) {
+      var x = src[i][0], y = src[i][1], u = dst[i][0], v = dst[i][1];
+      A.push([x, y, 1, 0, 0, 0, -u * x, -u * y, u]);
+      A.push([0, 0, 0, x, y, 1, -v * x, -v * y, v]);
+    }
+    for (i = 0; i < 8; i++) {       // Gauss-Jordan with partial pivoting
+      var piv = i;
+      for (j = i + 1; j < 8; j++) if (Math.abs(A[j][i]) > Math.abs(A[piv][i])) piv = j;
+      var tmp = A[i]; A[i] = A[piv]; A[piv] = tmp;
+      if (Math.abs(A[i][i]) < 1e-12) return null;
+      for (j = 0; j < 8; j++) {
+        if (j === i) continue;
+        var f = A[j][i] / A[i][i];
+        for (k = i; k < 9; k++) A[j][k] -= f * A[i][k];
+      }
+    }
+    return A.map(function (row, n) { return row[8] / row[n]; });
+  }
+  function arFloorUpdate() {
+    arPoseStep();
+    arFloor.R = arRot();
+    arFloor.f = (H / 2) / Math.tan(AR_VFOV * DEG / 2);
+    arFloor.width = parseFloat(arSize.value) || 1.2;
+    var q = [arProject(arFloorWorld(0, 0)), arProject(arFloorWorld(W, 0)), arProject(arFloorWorld(W, H)), arProject(arFloorWorld(0, H))];
+    var h = q.every(Boolean) ? arHomography([[0, 0], [W, 0], [W, H], [0, H]], [q[0], q[1], q[2], q[3]]) : null;
+    var m = h ? "matrix3d(" + [h[0], h[3], 0, h[6], h[1], h[4], 0, h[7], 0, 0, 1, 0, h[2], h[5], 0, 1].join(",") + ")" : "";
+    for (var i = 0; i < arLayers.length; i++) {
+      arLayers[i].style.visibility = h ? "" : "hidden";   // hidden while the floor is behind the camera (phone pointed up)
+      if (h) arLayers[i].style.transform = m;
+    }
+  }
+  // put the pond straight ahead of wherever the phone points right now
+  function arPlace() {
+    var R = arFloor.R || arRot();
+    var fx = -R[0][2], fy = -R[1][2], l = Math.hypot(fx, fy);
+    if (l < 0.35) { fx = R[0][1]; fy = R[1][1]; l = Math.hypot(fx, fy) || 1; }   // looking straight down: use "up on the screen"
+    arFloor.d = [fx / l, fy / l];
+    arFloor.r = [arFloor.d[1], -arFloor.d[0]];
+  }
+
+  // ----- hand tracking -----
+  // normalized video coords -> screen px (same math as object-fit: cover, mirrored for a front camera)
   function arToScreen(nx, ny) {
     var vw = arVideo.videoWidth, vh = arVideo.videoHeight, sc = Math.max(W / vw, H / vh);
     if (arMirror) nx = 1 - nx;
     return [nx * vw * sc + (W - vw * sc) / 2, ny * vh * sc + (H - vh * sc) / 2];
   }
-
-  function drawArFrame(c, cw, ch) {
-    var vw = arVideo.videoWidth, vh = arVideo.videoHeight, sc = Math.max(cw / vw, ch / vh);
-    var dw = vw * sc, dh = vh * sc;
-    c.save();
-    if (arMirror) { c.translate(cw, 0); c.scale(-1, 1); }
-    c.drawImage(arVideo, (cw - dw) / 2, (ch - dh) / 2, dw, dh);
-    c.restore();
-    c.fillStyle = "rgba(238,240,236,0.22)";
-    c.fillRect(0, 0, cw, ch);
-  }
-
   async function arLoadHands() {
     var mod = await import(AR_VISION + "/vision_bundle.mjs");
     var fileset = await mod.FilesetResolver.forVisionTasks(AR_VISION + "/wasm");
@@ -2114,38 +2240,39 @@
     };
     try { arLandmarker = await make("GPU"); } catch (e) { arLandmarker = await make("CPU"); }
   }
-
   function arLost() {
-    arHand.pos = null; arHand.size = null; arHand.pinch = false;
+    arHand.pos = null; arHand.posC = null; arHand.size = null; arHand.pinch = false;
     arHudCtx.clearRect(0, 0, arHud.width, arHud.height);
   }
-
   function arOnHand(lms, now) {
     var vw = arVideo.videoWidth, vh = arVideo.videoHeight;
     var pts = lms.map(function (l) { return arToScreen(l.x, l.y); });
     // distance from the camera, judged by how big the palm looks (wrist -> middle knuckle)
     var raw = Math.hypot((lms[0].x - lms[9].x) * vw, (lms[0].y - lms[9].y) * vh) / Math.max(vw, vh);
     arHand.size = arHand.size == null ? raw : arHand.size + (raw - arHand.size) * 0.3;
-    var first = !arHand.pos;
-    var prev = first ? pts : arHand.pos;
+    var prev = arHand.pos || pts;
     var cur = pts.map(function (p, i) { return [prev[i][0] + (p[0] - prev[i][0]) * 0.65, prev[i][1] + (p[1] - prev[i][1]) * 0.65]; });
-    arHand.pos = cur;
+    var curC = cur.map(function (p) { return toCanvas(p[0], p[1]); });   // the same points on the water (null above the horizon)
+    var prevC = arHand.posC;
+    arHand.pos = cur; arHand.posC = curC;
     var active = mode === "play" && !overlayOpen;
 
-    if (active && !first) {
+    if (active && prevC) {
       var cellW = W / Nx, cellH = H / Ny;
       AR_STIR_POINTS.forEach(function (i) {
-        var dx = cur[i][0] - prev[i][0], dy = cur[i][1] - prev[i][1], speed = Math.hypot(dx, dy);
+        var a = prevC[i], b = curC[i];
+        if (!a || !b) return;
+        var dx = b[0] - a[0], dy = b[1] - a[1], speed = Math.hypot(dx, dy);
         if (speed < 0.8) return;
         var fx = Math.max(-7, Math.min(7, dx / cellW)), fy = Math.max(-7, Math.min(7, dy / cellH));
         var palm = i === 9 || i === 0;
-        addVelocity(cur[i][0], cur[i][1], fx, fy, palm ? 3.2 : 2.3);
-        addRipple(cur[i][0], cur[i][1], Math.min(speed * 0.055, 2.0), palm ? 3.2 : 2.6);
+        addVelocity(b[0], b[1], fx, fy, palm ? 3.2 : 2.3);
+        addRipple(b[0], b[1], Math.min(speed * 0.055, 2.0), palm ? 3.2 : 2.6);
       });
       ensureRunning();
     }
 
-    // pinch (thumb tip 4 + index tip 8), with hysteresis so it doesn't flicker
+    // pinch (thumb tip 4 + index tip 8), judged on screen, with hysteresis so it doesn't flicker
     var palmPx = Math.hypot(cur[0][0] - cur[9][0], cur[0][1] - cur[9][1]) + 1e-3;
     var ratio = Math.hypot(cur[4][0] - cur[8][0], cur[4][1] - cur[8][1]) / palmPx;
     var wasPinch = arHand.pinch;
@@ -2155,13 +2282,13 @@
       var scale = Math.max(0.8, Math.min(1.5, 0.8 + (arHand.size - 0.13) * 5));   // nearer hand = bigger drop
       var moved = Math.hypot(mx - arHand.dropX, my - arHand.dropY);
       if (!wasPinch || (now - arHand.lastDrop > 260 && moved > 36)) {
-        drop(mx, my, scale);
+        var mc = toCanvas(mx, my);
+        if (mc) drop(mc[0], mc[1], scale);
         arHand.lastDrop = now; arHand.dropX = mx; arHand.dropY = my;
       }
     }
     arDrawHud(cur);
   }
-
   function arDrawHud(P) {
     if (arHud.width !== W || arHud.height !== H) { arHud.width = W; arHud.height = H; }
     var c = arHudCtx;
@@ -2177,6 +2304,7 @@
 
   function arLoop() {
     if (!arOn) return;
+    arFloorUpdate();
     if (arLandmarker && arVideo.readyState >= 2 && arVideo.currentTime !== arHand.lastVT) {
       arHand.lastVT = arVideo.currentTime;
       try {
@@ -2191,6 +2319,9 @@
     arOn = false;
     if (arStream) arStream.getTracks().forEach(function (t) { t.stop(); });
     arStream = null; arVideo.srcObject = null;
+    if (arPose.bound) { window.removeEventListener("deviceorientation", arOnOrient); arPose.bound = false; }
+    arPose.have = false; arFloor.R = null;
+    arLayers.forEach(function (el) { el.style.transform = ""; el.style.visibility = ""; });
     delete document.body.dataset.ar;
     btnAR.setAttribute("aria-pressed", "false");
     if (arSavedTheme !== undefined) {
@@ -2206,20 +2337,26 @@
     arBusy = true; btnAR.disabled = true;
     try {
       if (!on) { arStop(); arSay(""); return; }
+      var motion = arEnableMotion();   // first, straight from the tap: iOS asks for the sensor permission here
       ensureAudioStarted();
-      arSay("カメラを準備中…", true);
+      arSay("カメラと傾きセンサーを準備中…", true);
       var stream = await navigator.mediaDevices.getUserMedia({
         audio: false, video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } }
       });
       arStream = stream;
       var st = stream.getVideoTracks()[0], fm = st && st.getSettings ? st.getSettings().facingMode : undefined;
-      arMirror = fm !== "environment";            // a front/webcam feels like a mirror; the back camera does not
+      arMirror = fm !== "environment";            // a front camera/webcam feels like a mirror; the back camera does not
       arVideo.style.transform = arMirror ? "scaleX(-1)" : "";
       arVideo.srcObject = stream;
       await arVideo.play();
+      var gyro = await motion;
       // ink must read as dark on top of the camera -- force the light palette while AR is on
       arSavedTheme = document.documentElement.getAttribute("data-theme");
       document.documentElement.setAttribute("data-theme", "light");
+      arPose.tgt = arPose.have ? arPose.tgt : [0, AR_DEFAULT_TILT, 0];
+      arPose.cur = arPose.tgt.slice();
+      arFloor.R = arRot();
+      arPlace();
       arOn = true;
       document.body.dataset.ar = "on";
       btnAR.setAttribute("aria-pressed", "true");
@@ -2228,9 +2365,11 @@
       if (!arLandmarker) {
         arSay("手の認識を読み込み中…", true);
         try { await arLoadHands(); }
-        catch (e) { console.error(e); arSay("手の認識を読み込めませんでした。カメラ映像の上で、画面を指でなぞって遊べます"); return; }
+        catch (e) { console.error(e); arSay("手の認識を読み込めませんでした。床の水面を、画面を指でなぞって遊べます"); return; }
       }
-      arSay("カメラの向こうに手をかざして、親指と人差し指をつまむと墨が落ちます");
+      arSay(gyro && arPose.have
+        ? "スマホを床の方へ傾けると、床に水面が広がります。カメラの向こうで親指と人差し指をつまむと墨が落ちます"
+        : "傾きセンサーが使えないので、水面は画面に固定されます。カメラの向こうで親指と人差し指をつまむと墨が落ちます");
     } catch (e) {
       console.error(e);
       if (arStream) arStop();
@@ -2240,6 +2379,11 @@
     }
   }
   btnAR.addEventListener("click", function () { setAR(!arOn); });
+  document.getElementById("btnArPlace").addEventListener("click", function () {
+    arPose.cur = arPose.tgt.slice();
+    arFloor.R = arRot();
+    arPlace();
+  });
 
   // ---------- init ----------
   resize();
